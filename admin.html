@@ -1,9 +1,16 @@
 <!doctype html>
 <html lang="zh-Hant">
 <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>審核投稿｜台大獨處空間</title><link rel="stylesheet" href="styles.css"></head>
-<body><nav><strong>台大獨處空間地圖</strong><span><a href="index.html">投稿</a><a href="map.html">公開地圖</a><a href="admin.html">審核</a></span></nav><main class="panel"><h1>待審核投稿</h1><p id="status">載入中。請使用已授權的 Google 帳號開啟此頁。</p><div id="items"></div></main>
+<body><nav><strong>台大獨處空間地圖</strong><span><a href="index.html">投稿</a><a href="map.html">公開地圖</a><a href="admin.html">審核</a></span></nav><main class="panel"><h1>待審核投稿</h1><div id="login"><p>請先使用管理員 Google 帳號登入。</p><div id="google-login"></div></div><p id="status">尚未登入</p><div id="items"></div></main>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 <script>
-const API="https://script.google.com/macros/s/AKfycbwOdcBTh--ne3TvRaO6dM2-i7VUyZufkMSSACIvOgIKWbBNWESA0yr-VfgVM6XBW0vB/exec";const root=document.getElementById("items");
-async function load(){try{const r=await fetch(API+"?action=pending");if(!r.ok)throw 0;const d=await r.json();document.getElementById("status").textContent=`共 ${d.items.length} 筆待審核`;root.innerHTML=d.items.map(x=>`<article class="submission"><h2>${x.name}</h2><p>${x.reason||"（沒有填寫理由）"}</p><p>座標：${x.lat}, ${x.lng}</p><a target="_blank" href="https://www.openstreetmap.org/?mlat=${x.lat}&mlon=${x.lng}#map=18/${x.lat}/${x.lng}">在地圖查看</a><div><button onclick="review('${x.id}','approved')">通過</button><button class="danger" onclick="review('${x.id}','rejected')">拒絕</button></div></article>`).join("")||"目前沒有待審核投稿";}catch{document.getElementById("status").textContent="無法載入，請確認 Google 帳號與 Apps Script 權限。";}}
-async function review(id,status){await fetch(API,{method:"POST",body:JSON.stringify({action:"review",id,status})});load()}load();
+const API="https://script.google.com/macros/s/AKfycbwOdcBTh--ne3TvRaO6dM2-i7VUyZufkMSSACIvOgIKWbBNWESA0yr-VfgVM6XBW0vB/exec";
+const CLIENT_ID="替換成你的 Google OAuth Web Client ID"; const root=document.getElementById("items");
+let credential="";
+function handleCredential(response){credential=response.credential;document.getElementById("login").hidden=true;load();}
+function startLogin(){google.accounts.id.initialize({client_id:CLIENT_ID,callback:handleCredential});google.accounts.id.renderButton(document.getElementById("google-login"),{theme:"outline",size:"large",text:"signin_with"});}
+async function load(){if(!credential)return;try{const r=await fetch(API,{method:"POST",body:JSON.stringify({action:"pending",credential})});const d=await r.json();if(!r.ok||d.error)throw 0;document.getElementById("status").textContent=`共 ${d.items.length} 筆待審核`;root.innerHTML=d.items.map(x=>`<article class="submission"><h2>${escapeHtml(x.name)}</h2><p>${escapeHtml(x.reason||"（沒有填寫理由）")}</p><p>座標：${x.lat}, ${x.lng}</p><a target="_blank" href="https://www.openstreetmap.org/?mlat=${x.lat}&mlon=${x.lng}#map=18/${x.lat}/${x.lng}">在地圖查看</a><div><button onclick="review('${x.id}','approved')">通過</button><button class="danger" onclick="review('${x.id}','rejected')">拒絕</button></div></article>`).join("")||"目前沒有待審核投稿";}catch{document.getElementById("status").textContent="登入成功，但目前帳號不是管理員，或 Apps Script 設定尚未完成。";}}
+async function review(id,status){const r=await fetch(API,{method:"POST",body:JSON.stringify({action:"review",id,status,credential})});const d=await r.json();if(!r.ok||d.error)alert("審核失敗");load();}
+function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;"}[c]));}
+window.addEventListener("load",()=>{document.getElementById("login").hidden=false;startLogin();});
 </script></body></html>
