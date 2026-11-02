@@ -1,9 +1,0 @@
-<!doctype html>
-<html lang="zh-Hant">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>公開地圖｜台大獨處空間</title><link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"><link rel="stylesheet" href="styles.css"></head>
-<body><nav><strong>台大獨處空間地圖</strong><span><a href="index.html">投稿</a><a href="map.html">公開地圖</a><a href="admin.html">審核</a></span></nav><main class="wide"><h1>已通過的獨處空間</h1><p id="status">載入中...</p><div id="map"></div></main>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script><script>
-const API="https://script.google.com/macros/s/AKfycbwOdcBTh--ne3TvRaO6dM2-i7VUyZufkMSSACIvOgIKWbBNWESA0yr-VfgVM6XBW0vB/exec";const map=L.map("map").setView([25.0173,121.5397],16);L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{attribution:"© OpenStreetMap contributors"}).addTo(map);
-fetch(API+"?action=approved").then(r=>r.json()).then(data=>{(data.items||[]).forEach(x=>L.marker([x.lat,x.lng]).addTo(map).bindPopup("<b>"+escapeHtml(x.name)+"</b><br>"+escapeHtml(x.reason||"")));document.getElementById("status").textContent=`目前有 ${data.items.length} 個已通過空間`;}).catch(()=>document.getElementById("status").textContent="地圖資料載入失敗");
-function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;"}[c]));}
-</script></body></html>
