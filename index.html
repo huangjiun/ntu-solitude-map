@@ -81,8 +81,13 @@
         reason: document.getElementById("reason").value.trim()
       };
       try {
-        const response = await fetch(GAS_URL, { method: "POST", body: JSON.stringify(payload) });
-        if (!response.ok) throw new Error("HTTP " + response.status);
+        // Apps Script may redirect its response and omit CORS headers. The
+        // request is intentionally sent as a simple no-cors POST.
+        await fetch(GAS_URL, {
+          method: "POST",
+          mode: "no-cors",
+          body: JSON.stringify(payload)
+        });
         alert("成功寫入 Google 試算表！");
         form.reset();
         status.textContent = "定位狀態：尚未取得";
