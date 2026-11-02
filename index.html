@@ -1,39 +1,100 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
-  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>台大獨處空間地圖｜投稿</title>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-  <link rel="stylesheet" href="styles.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>獨處點位收集器</title>
+  <style>
+    body { font-family: sans-serif; background: #f5f2e9; color: #21332d; padding: 20px; max-width: 520px; margin: auto; }
+    main { background: white; border-radius: 18px; padding: 24px; box-shadow: 0 8px 30px #21332d18; }
+    h1 { margin-top: 0; }
+    p { line-height: 1.7; }
+    label { display: block; font-weight: bold; margin: 14px 0 6px; }
+    input, textarea, button { width: 100%; margin-bottom: 12px; padding: 12px; border: 1px solid #d5ddd5; border-radius: 8px; box-sizing: border-box; font: inherit; }
+    input[readonly] { background: #f3f6f2; }
+    button { background: #4f8064; color: white; border: none; cursor: pointer; font-weight: bold; }
+    button:disabled { opacity: .6; cursor: wait; }
+    #status { color: #64746a; font-size: .92rem; }
+    .success { color: #287044 !important; }
+    .error { color: #a33b2d !important; }
+  </style>
 </head>
 <body>
-  <nav><strong>台大獨處空間地圖</strong><span><a href="index.html">投稿</a><a href="map.html">公開地圖</a><a href="admin.html">審核</a></span></nav>
-  <main class="panel">
-    <h1>分享一個獨處角落</h1>
-    <p>投稿會先進入審核，通過後才會出現在公開地圖。</p>
-    <button id="locate">取得目前位置</button><p id="status">尚未取得定位</p>
-    <form id="form">
-      <label>地點名稱<input id="name" required placeholder="例如：文學院後方木椅"></label>
-      <label>經度<input id="lng" readonly required></label>
-      <label>緯度<input id="lat" readonly required></label>
-      <label>推薦理由<textarea id="reason" rows="4" placeholder="例如：安靜、隱密、有樹蔭"></textarea></label>
-      <button type="submit">送出投稿</button>
+  <main>
+    <h1>記錄獨處地點</h1>
+    <p>分享台大校園裡適合一個人安靜待著的角落。</p>
+    <button type="button" id="locationButton">1. 取得當前定位</button>
+    <p id="status">定位狀態：尚未取得</p>
+    <form id="pointForm">
+      <label for="name">名稱</label>
+      <input type="text" id="name" required placeholder="例如：文學院後方木椅">
+      <label for="lng">經度</label>
+      <input type="text" id="lng" readonly required>
+      <label for="lat">緯度</label>
+      <input type="text" id="lat" readonly required>
+      <label for="reason">理由</label>
+      <textarea id="reason" rows="3" placeholder="例如：安靜、隱密、有樹蔭"></textarea>
+      <button type="submit" id="submitButton">2. 上傳至試算表</button>
     </form>
   </main>
   <script>
-    const API = "https://script.google.com/macros/s/AKfycbwOdcBTh--ne3TvRaO6dM2-i7VUyZufkMSSACIvOgIKWbBNWESA0yr-VfgVM6XBW0vB/exec";
-    const $ = (id) => document.getElementById(id);
-    $("locate").onclick = () => navigator.geolocation.getCurrentPosition(p => {
-      $("lat").value = p.coords.latitude; $("lng").value = p.coords.longitude; $("status").textContent = "定位成功";
-    }, e => $("status").textContent = "定位失敗：" + e.message, { enableHighAccuracy: true });
-    $("form").onsubmit = async (e) => {
-      e.preventDefault(); $("status").textContent = "投稿送出中...";
+    const GAS_URL = "https://script.google.com/macros/s/AKfycbwOdcBTh--ne3TvRaO6dM2-i7VUyZufkMSSACIvOgIKWbBNWESA0yr-VfgVM6XBW0vB/exec";
+    const status = document.getElementById("status");
+    const form = document.getElementById("pointForm");
+    const submitButton = document.getElementById("submitButton");
+
+    document.getElementById("locationButton").addEventListener("click", () => {
+      if (!navigator.geolocation) {
+        status.textContent = "您的瀏覽器不支援定位功能";
+        status.className = "error";
+        return;
+      }
+      status.textContent = "定位中...";
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          document.getElementById("lat").value = position.coords.latitude;
+          document.getElementById("lng").value = position.coords.longitude;
+          status.textContent = "定位成功！";
+          status.className = "success";
+        },
+        (error) => {
+          status.textContent = "定位失敗：" + error.message;
+          status.className = "error";
+        },
+        { enableHighAccuracy: true, timeout: 10000 }
+      );
+    });
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (!document.getElementById("lat").value || !document.getElementById("lng").value) {
+        status.textContent = "請先取得當前定位";
+        status.className = "error";
+        return;
+      }
+      submitButton.disabled = true;
+      submitButton.textContent = "上傳中...";
+      const payload = {
+        name: document.getElementById("name").value.trim(),
+        lng: document.getElementById("lng").value,
+        lat: document.getElementById("lat").value,
+        reason: document.getElementById("reason").value.trim()
+      };
       try {
-        const r = await fetch(API, { method: "POST", body: JSON.stringify({ action: "submit", name: $("name").value.trim(), lat: $("lat").value, lng: $("lng").value, reason: $("reason").value.trim() }) });
-        if (!r.ok) throw new Error();
-        $("form").reset(); $("status").textContent = "已送出，等待審核！";
-      } catch { $("status").textContent = "送出失敗，請稍後再試。"; }
-    };
+        const response = await fetch(GAS_URL, { method: "POST", body: JSON.stringify(payload) });
+        if (!response.ok) throw new Error("HTTP " + response.status);
+        alert("成功寫入 Google 試算表！");
+        form.reset();
+        status.textContent = "定位狀態：尚未取得";
+        status.className = "";
+      } catch (error) {
+        status.textContent = "上傳失敗，請檢查 Apps Script 部署權限或網路連線。";
+        status.className = "error";
+      } finally {
+        submitButton.disabled = false;
+        submitButton.textContent = "2. 上傳至試算表";
+      }
+    });
   </script>
 </body>
 </html>
