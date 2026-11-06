@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="台大獨處空間互動地圖">
+  <title>台大獨處空間｜互動地圖</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <style>
+    :root { --ink: #21332d; --muted: #6d7b73; --cream: #f5f2e9; --green: #4f8064; --line: #dce4dc; }
+    * { box-sizing: border-box; }
+    body { margin: 0; color: var(--ink); background: var(--cream); font-family: system-ui, -apple-system, "Noto Sans TC", sans-serif; }
+    header { align-items: center; display: flex; justify-content: space-between; margin: auto; max-width: 1180px; padding: 24px 24px 12px; }
+    header a { color: inherit; text-decoration: none; }
+    header strong { font-size: 15px; letter-spacing: .08em; }
+    header nav { display: flex; gap: 16px; font-size: 13px; }
+    header nav a:last-child { color: var(--green); font-weight: 700; }
+    main { margin: auto; max-width: 1180px; padding: 24px; }
+    .intro { align-items: end; display: flex; justify-content: space-between; margin-bottom: 20px; }
+    h1 { font-family: Georgia, serif; font-size: clamp(32px, 5vw, 52px); margin: 0 0 8px; }
+    .intro p, #status { color: var(--muted); margin: 0; }
+    .controls { display: flex; gap: 10px; margin-bottom: 16px; }
+    input, select { background: white; border: 1px solid var(--line); border-radius: 8px; color: var(--ink); font: inherit; padding: 11px 12px; }
+    input { flex: 1; min-width: 0; }
+    #map { background: #dbe8df; border-radius: 14px; height: min(68vh, 680px); min-height: 430px; overflow: hidden; }
+    .leaflet-popup-content-wrapper { border-radius: 10px; }
+    .popup h2 { font-size: 17px; margin: 0 0 7px; }
+    .popup p { color: var(--muted); font-size: 13px; line-height: 1.6; margin: 0; }
+    .popup small { color: var(--green); display: block; margin-top: 8px; }
+    .notice { background: #fff; border: 1px solid var(--line); border-radius: 10px; color: var(--muted); margin-top: 14px; padding: 12px 14px; }
+    @media (max-width: 600px) {
+      header, main { padding-left: 16px; padding-right: 16px; }
+      header { align-items: flex-start; flex-direction: column; gap: 12px; }
+      .intro { align-items: flex-start; flex-direction: column; gap: 8px; }
+      .controls { flex-direction: column; }
+      #map { min-height: 520px; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <a href="index.html"><strong>台大獨處空間地圖</strong></a>
+    <nav><a href="index.html">投稿</a><a href="map.html">互動地圖</a></nav>
+  </header>
+  <main>
+    <section class="intro">
+      <div>
+        <h1>找到一個安靜角落</h1>
+        <p>資料來自 Google 試算表；更新後會自動重新載入。</p>
+      </div>
+      <p id="status">資料載入中...</p>
+    </section>
+    <div class="controls">
+      <input id="search" type="search" placeholder="搜尋地點名稱或推薦理由">
+      <select id="refresh">
+        <option value="60000">每 1 分鐘更新</option>
+        <option value="300000">每 5 分鐘更新</option>
+        <option value="0">不自動更新</option>
+      </select>
+    </div>
+    <div id="map" aria-label="台大獨處空間互動地圖"></div>
+    <div class="notice">地圖會在開啟時載入資料，並依照上方設定定時同步公開試算表。</div>
+  </main>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    const CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vT7xqBlw3mzQXBNhrb4TkEWcmd6438qQctRKlqDWd0FQ0kPI9UvboTO52SLGStvvsgR9i80PVuUodjL/pub?output=csv";
+    const map = L.map("map").setView([25.0173, 121.5397], 16);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: "&copy; OpenStreetMap contributors"
+    }).addTo(map);
+    const markerLayer = L.layerGroup().addTo(map);
+    const search = document.getElementById("search");
+    const status = document.getElementById("status");
+    let places = [];
+    let refreshTimer;
+
+    function parseCsv(text) {
+      const rows = [];
+      let row = [], cell = "", quoted = false;
+      for (let i = 0; i < text.length; i += 1) {
+        const char = text[i], next = text[i + 1];
+        if (char === '"' && quoted && next === '"') { cell += '"'; i += 1; }
+        else if (char === '"') quoted = !quoted;
+        else if (char === "," && !quoted) { row.push(cell); cell = ""; }
+        else if ((char === "\n" || char === "\r") && !quoted) {
+          if (char === "\r" && next === "\n") i += 1;
+          row.push(cell); if (row.some(value => value.trim())) rows.push(row);
+          row = []; cell = "";
+        } else cell += char;
+      }
+      if (cell || row.length) { row.push(cell); rows.push(row); }
+      return rows;
+    }
+
+    function normalise(rows) {
+      if (rows.length < 2) return [];
+      const headers = rows[0].map(value => value.trim().toLowerCase());
+      const find = (names, fallback) => {
+        const index = headers.findIndex(header => names.some(name => header.includes(name)));
+        return index >= 0 ? index : fallback;
+      };
+      const nameIndex = find(["名稱", "name", "地點"], 0);
+      const lngIndex = find(["經度", "longitude", "lng", "lon"], 1);
+      const latIndex = find(["緯度", "latitude", "lat"], 2);
+      const reasonIndex = find(["理由", "reason", "描述"], 3);
+      return rows.slice(1).map(row => ({
+        name: (row[nameIndex] || "").trim(),
+        lng: Number.parseFloat(row[lngIndex]),
+        lat: Number.parseFloat(row[latIndex]),
+        reason: (row[reasonIndex] || "").trim()
+      })).filter(place => place.name && Number.isFinite(place.lat) && Number.isFinite(place.lng));
+    }
+
+    function escapeHtml(value) {
+      return String(value).replace(/[&<>"']/g, char => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;"
+      }[char]));
+    }
+
+    function render() {
+      markerLayer.clearLayers();
+      const keyword = search.value.trim().toLowerCase();
+      const visible = places.filter(place => `${place.name} ${place.reason}`.toLowerCase().includes(keyword));
+      const bounds = [];
+      visible.forEach(place => {
+        const marker = L.marker([place.lat, place.lng]).bindPopup(
+          `<div class="popup"><h2>${escapeHtml(place.name)}</h2>` +
+          `<p>${escapeHtml(place.reason || "尚未填寫推薦理由")}</p>` +
+          `<small>${place.lat.toFixed(6)}, ${place.lng.toFixed(6)}</small></div>`
+        );
+        marker.addTo(markerLayer);
+        bounds.push([place.lat, place.lng]);
+      });
+      if (bounds.length && !keyword) map.fitBounds(bounds, { padding: [30, 30], maxZoom: 17 });
+      status.textContent = `顯示 ${visible.length} 個空間 · 最後更新 ${new Date().toLocaleTimeString("zh-TW")}`;
+    }
+
+    async function loadPlaces() {
+      status.textContent = "資料更新中...";
+      try {
+        const response = await fetch(`${CSV_URL}&t=${Date.now()}`, { cache: "no-store" });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        places = normalise(parseCsv(await response.text()));
+        render();
+      } catch (error) {
+        status.textContent = "資料載入失敗，請確認試算表已公開發佈。";
+        console.error(error);
+      }
+    }
+
+    function scheduleRefresh() {
+      clearInterval(refreshTimer);
+      const interval = Number(document.getElementById("refresh").value);
+      if (interval) refreshTimer = setInterval(loadPlaces, interval);
+    }
+
+    search.addEventListener("input", render);
+    document.getElementById("refresh").addEventListener("change", scheduleRefresh);
+    loadPlaces();
+    scheduleRefresh();
+  </script>
+</body>
+</html>
